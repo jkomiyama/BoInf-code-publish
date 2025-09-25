@@ -18,7 +18,7 @@ This repository contains code for the paper "Best-of-Infinity - Asymptotic Perfo
   - `accuracy_per_problem.py`: Plot the relationship between sample size n and majority-vote accuracy per problem
   - `count_problems.py`: Count the number of records (problems) in `analysis_*.jsonl`
   - `jsonl/`: Updated pre-analyzed files (e.g., `analysis_aime2025_*.jsonl`, `analysis_math500_*.jsonl`), summarized from raw answer files so that we do not need to use the generation files directly. Based on re-generated GPT-OSS-20B answers with CoTs and we have slightly updated the parser.
-  - `jsonl_ver0/`: Pre-analyzed files (old), used in the ICLR paper. Based on GPT-OSS-20B answers without CoT.
+  - `jsonl_ver0/`: Pre-analyzed files (old), used in the paper. Based on GPT-OSS-20B answers without CoT.
 - `answer_generation/`
   - `BoN_answeranalyze.py`: Analyze logs stored in `saved_answers/` and produce `analysis_{dataset}_{llm}.jsonl`
   - `BoN_choice_analyze.py`: Aggregate `saved_choices/*.jsonl`, and show/visualize accuracy by scale, etc.
