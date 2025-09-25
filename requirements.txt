@@ -1,0 +1,13 @@
+fastapi==0.117.1
+highspy==1.11.0
+matplotlib==3.10.6
+numpy==2.3.3
+openai==1.108.2
+pandas==2.3.2
+pydantic==2.11.9
+python-dotenv==1.1.1
+Requests==2.32.5
+torch==2.6.0
+transformers==4.53.2
+uvicorn==0.36.0
+vllm==0.8.5.post1
