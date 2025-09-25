@@ -5,7 +5,7 @@ This repository contains code for the paper "Best-of-Infinity - Asymptotic Perfo
 
 * The `boinf` directory provides analysis based on summary JSON files (jsonl/ directory). All plots are derived from the analysis in this directory.
 * The `answer_generation` directory includes tools for answer generation as well as comparing best-of-N selection methods. If you only want to test the best-of-infinity results, you do not need to use this directory.
-* The "Large-scale Generation Dataset" (= all raw LLM answers) are found at https://figshare.com/s/ea10a6bd76bcf41e30bd. 
+* The "Large-scale Generation Dataset" (= all raw LLM answers) are found at https://figshare.com/account/articles/30208525. 
 
 ## Structure
 
