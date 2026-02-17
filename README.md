@@ -1,7 +1,8 @@
 # Repository of Best-of-Infinity
 
-This repository contains code for the paper "Best-of-Infinity - Asymptotic Performance of Test-Time Compute". 
+News: Our paper is accepted at ICLR2026! 
 
+This repository contains code for the paper "Best-of-Infinity - Asymptotic Performance of Test-Time Compute". 
 
 * The `boinf` directory provides analysis based on summary JSON files (jsonl/ directory). All plots are derived from the analysis in this directory.
 * The `answer_generation` directory includes tools for answer generation as well as comparing best-of-N selection methods. If you only want to test the best-of-infinity results, you do not need to use this directory.
