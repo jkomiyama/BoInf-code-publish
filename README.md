@@ -1,6 +1,6 @@
 # Repository of Best-of-Infinity
 
-News: Our paper is accepted at ICLR2026! 
+**News: Our paper is accepted at ICLR2026!**
 
 This repository contains code for the paper "Best-of-Infinity - Asymptotic Performance of Test-Time Compute". 
 
