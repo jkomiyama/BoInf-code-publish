@@ -116,7 +116,7 @@ git clone https://huggingface.co/datasets/opencompass/AIME2025
 * To create 80 answers for each problem of AIME2025, run
 ```bash
 cd answer_generation
-python BoN_batch.py --start 0 --end 15 --max_workers 16 --dataset_type aime2025 --evaluation_method best --use_save --output_dir output_batch_datagen -n 5 --file_start 0 
+python BoN_batch.py --start 0 --end 15 --max_workers 16 --dataset_type aime2025 --evaluation_method omni --use_save --output_dir output_batch_datagen -n 5 --file_start 0 
 ```
 - This creates 16 processses and each process generates five answers. The first proces creates `saved_answers/aime2025_probXX_answerYY.txt`, where `XX` ranges from 0 to 29 (i.e., AIME2025 has 30 problems) and `YY` ranges from 0 to 4. 
 
