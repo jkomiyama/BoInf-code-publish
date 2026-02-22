@@ -1327,6 +1327,48 @@ def is_correct(answer: str, gold: str, dataset_type: str = None) -> bool:
         gold_norm = normalize_letter_choice(gold)
         return pred_norm == gold_norm
     
+    def check_medrect_answer(pred: str, gold: str) -> bool:
+        """Check if MedRect answer is correct
+        
+        For MedRect dataset:
+        - If gold is "CORRECT": check if prediction contains "CORRECT"
+        - If gold is a number: extract first number from prediction and compare
+        """
+        pred_upper = pred.upper().strip()
+        gold_upper = gold.upper().strip()
+        
+        # Case 1: Gold is "CORRECT"
+        if gold_upper == "CORRECT":
+            return "CORRECT" in pred_upper
+        
+        # Case 2: Gold is a sentence number
+        try:
+            gold_num = int(gold_upper)
+            # Extract first number from prediction (format: "N:" or just "N")
+            # Look for patterns like "7:", "7 :", or standalone "7"
+            number_patterns = [
+                r'^(\d+)\s*:',  # "7:" at start
+                r'\b(\d+)\s*:',  # "7:" with word boundary
+                r'^(\d+)\b',     # Just "7" at start
+            ]
+            
+            for pattern in number_patterns:
+                match = re.search(pattern, pred_upper)
+                if match:
+                    pred_num = int(match.group(1))
+                    return pred_num == gold_num
+            
+            # Fallback: check if gold number appears in prediction
+            return str(gold_num) in pred_upper
+            
+        except ValueError:
+            # Gold is not a number, do string comparison
+            return gold_upper in pred_upper
+    
+    # Special handling for MedRect dataset
+    if dataset_type == "medrect":
+        return check_medrect_answer(answer, str(gold))
+    
     # Extract answer from boxed pattern
     extracted_answer = extract_boxed_answer(answer)
     
@@ -1335,8 +1377,8 @@ def is_correct(answer: str, gold: str, dataset_type: str = None) -> bool:
         extracted_cleaned = remove_degree_symbols(extracted_answer)
         gold_cleaned = remove_degree_symbols(str(gold))
         
-        # For math or math500 datasets: use LLM numerical comparison
-        if dataset_type in ["math", "math500"]:
+        # For math, math500, or answerbench datasets: use LLM numerical comparison
+        if dataset_type in ["math", "math500", "answerbench"]:
             # Compare extracted answer from boxed with gold using LLM
             #print(f"extracted_answer: {extracted_answer}")
             #print(f"gold: {gold}")

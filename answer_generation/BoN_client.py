@@ -136,6 +136,8 @@ def get_max_tokens_for_dataset(dataset_type, custom_max_tokens=None):
         'aime2025': 100000,    # AIME 2025: high difficulty, detailed solutions needed
         'mmlu_pro': 100000,     # MMLU-Pro: multiple choice, moderate explanations
         'gpqa_diamond': 50000,  # GPQA-Diamond: advanced science domain choice questions
+        'answerbench': 100000,  # AnswerBench: IMO-level math problems
+        'medrect': 50000,      # MedRect: medical error detection tasks
         'auto': 10000,        # Default for auto-detection
     }
     
@@ -179,8 +181,8 @@ def parse_args():
                       help='Output directory path (default: ./iter_outputs)')
     parser.add_argument('--test_file', type=str, default='templategsm_random.jsonl',
                       help='Path to test dataset file (default: templategsm_random.jsonl). For AIME2024, use /workspace/AIME_2024/aime_2024_problems.parquet; For AIME2025, use /workspace/AIME2025/aime2025-full.jsonl; For MMLU-Pro, use /workspace/MMLU-Pro/data/validation-00000-of-00001.parquet; For GPQA-Diamond, use /workspace/GPQA-Diamond/test/gpqa_diamond.parquet')
-    parser.add_argument('--dataset_type', type=str, choices=['gsm8k', 'aime2024', 'aime2024short', 'aime2025', 'math', 'math500', 'mmlu_pro', 'gpqa_diamond', 'auto'], default='auto',
-                      help='Dataset type: gsm8k, aime2024, aime2024short, aime2025, math, math500, mmlu_pro, gpqa_diamond, or auto-detect (default: auto)')
+    parser.add_argument('--dataset_type', type=str, choices=['gsm8k', 'aime2024', 'aime2024short', 'aime2025', 'math', 'math500', 'mmlu_pro', 'gpqa_diamond', 'answerbench', 'medrect', 'auto'], default='auto',
+                      help='Dataset type: gsm8k, aime2024, aime2024short, aime2025, math, math500, mmlu_pro, gpqa_diamond, answerbench, medrect, or auto-detect (default: auto)')
     parser.add_argument('--instruction_key', type=str, default=None,
                       help='Key name for instruction/problem in dataset (auto-detected if not specified)')
     parser.add_argument('--output_key', type=str, default=None,
@@ -1094,6 +1096,18 @@ def detect_dataset_type(file_path, dataset_type='auto'):
                 'output_key': 'answer',
                 'solution_key': 'question'  # GPQA-Diamond has no solution, so use question as solution
             }
+        elif dataset_type == 'answerbench':
+            return {
+                'instruction_key': 'Problem',
+                'output_key': 'Short Answer',
+                'solution_key': 'Problem'  # answerbench has no solution, so use Problem as solution
+            }
+        elif dataset_type == 'medrect':
+            return {
+                'instruction_key': 'sentences',
+                'output_key': 'error_sentence_id',
+                'solution_key': 'sentences'  # medrect uses sentences for both instruction and solution
+            }
     
     # Auto-detection by file extension
     if file_path.endswith('.parquet'):
@@ -1173,8 +1187,8 @@ def detect_dataset_type(file_path, dataset_type='auto'):
                 'solution_key': 'solution_wocode'
             }
 
-def load_data(file_path, instruction_key, output_key, solution_key):
-    """Load JSONL or Parquet file and return in unified format"""
+def load_data(file_path, instruction_key, output_key, solution_key, dataset_type='auto'):
+    """Load JSONL, Parquet, CSV, or JSON array file and return in unified format"""
     list_data_dict = []
     
     # Determine if MMLU-Pro dataset
@@ -1185,9 +1199,13 @@ def load_data(file_path, instruction_key, output_key, solution_key):
         df = pd.read_parquet(file_path)  # type: ignore
         columns = df.columns.tolist()
         is_mmlu_pro = 'question' in columns and 'options' in columns and 'answer' in columns and 'cot_content' in columns
+    elif file_path.endswith('.csv'):
+        if not HAS_PANDAS:
+            raise ImportError("pandas is required for reading CSV files. Please run pip install pandas.")
+        df = pd.read_csv(file_path)  # type: ignore
     
-    if file_path.endswith('.parquet'):
-        # For Parquet files
+    if file_path.endswith('.parquet') or file_path.endswith('.csv'):
+        # For Parquet and CSV files
         for _, row in df.iterrows():
             if is_mmlu_pro:
                 # For MMLU-Pro: combine question and options to generate instruction
@@ -1219,6 +1237,36 @@ def load_data(file_path, instruction_key, output_key, solution_key):
                     category=row.get('category', None),
                 )
             list_data_dict.append(item)
+    elif dataset_type == 'medrect' and file_path.endswith('.json'):
+        # For MedRect JSON array format
+        with open(file_path, "r") as f:
+            data = json.load(f)
+        
+        print(f"MedRect: Loaded {len(data)} samples")
+        
+        for item in data:
+            # For MedRect: instruction is sentences, output is error_sentence_id or "CORRECT"
+            sentences = item.get(instruction_key, '')
+            error_flag = item.get('error_flag', 0)
+            
+            # Determine expected output
+            if error_flag == 1:
+                # Has error: output is the error sentence number
+                error_sentence_id = item.get('error_sentence_id', None)
+                expected_output = str(error_sentence_id) if error_sentence_id is not None else "CORRECT"
+            else:
+                # No error
+                expected_output = "CORRECT"
+            
+            new_item = dict(
+                instruction=sentences,
+                output=expected_output,
+                solution_wocode=sentences,  # Use sentences as solution
+                category=item.get('error_type', None),
+                sample_id=item.get('sample_id', None),
+                error_flag=error_flag,
+            )
+            list_data_dict.append(new_item)
     else:
         # For JSONL files
         with open(file_path, "r") as f:
@@ -1244,7 +1292,7 @@ def load_jsonl(
     is_gzip=False,
 ):
     # Maintained for backward compatibility
-    return load_data(file_path, instruction, output, solution_wocode)
+    return load_data(file_path, instruction, output, solution_wocode, 'auto')
 
 # Set test file path
 test_filepath = os.path.join(".", args.test_file)
@@ -1274,7 +1322,8 @@ list_data_dict = load_data(
     test_filepath,
     instruction_key,
     output_key, 
-    solution_key
+    solution_key,
+    args.dataset_type
 )[:max_samples]
 
 # For testing, AIME2024 difficult problem list
@@ -3227,7 +3276,23 @@ def generate_answerBoN_save(instruction, prompt, N, gold, dataset_name, problem_
         grammar = None
     if direct_answer:
         grammar = None
-        prompt = instruction
+        # For MedRect dataset, use special prompt
+        if dataset_name == "medrect":
+            medrect_prompt = """あなたは臨床テキストの正確性をレビューする医学専門家です。テキストにはエラーがないか、または正確に1つの医学的エラーが含まれています。
+
+治療、診断、管理、または因果関係に関連する医学的エラーを特定し、修正してください。
+
+出力形式：
+- エラーなしの場合：`CORRECT`
+- エラー発見の場合：`文番号: 修正された文`
+
+重要：結果のみを出力してください。説明、分析、追加のテキストは含めないでください。
+
+"""
+            prompt = medrect_prompt + instruction
+        else:
+            prompt = instruction
+        
         if "mistral" in LLM_MODEL_PORT_8100.lower() or "magistral" in LLM_MODEL_PORT_8100.lower(): #mistral does not like boxed..
             pass
 #            if dataset_name == "mmlu_pro":
@@ -3241,6 +3306,9 @@ def generate_answerBoN_save(instruction, prompt, N, gold, dataset_name, problem_
                 prompt = prompt + "\n Please reason step by step, and put your final answer as the letter choice (A), (B), (C), etc. within \\boxed{}."
             elif dataset_name == "gpqa_diamond":
                 prompt = prompt + "\n Please reason step by step, and put your final answer as the letter choice (A), (B), (C), etc. within \\boxed{}."
+            elif dataset_name == "medrect":
+                # MedRect does not need additional formatting instructions
+                pass
             else:
                 prompt = prompt + "\n Please reason step by step, and put your final answer within \\boxed{}." # https://huggingface.co/Qwen/QwQ-32B#usage-guidelines recommended by QwQ-32B
     print("prompt = ", prompt)
