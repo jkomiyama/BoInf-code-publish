@@ -136,8 +136,14 @@ def normalize_math_notation(text: str) -> str:
     
     import re
     
+    # Remove $ symbols (from gold answers like $2^{u-2}$)
+    text = text.replace('$', '')
+    
     # Replace \cdot with space before removing all spaces
     text = re.sub(r'\\cdot', ' ', text)
+    
+    # Remove \, (small space in LaTeX)
+    text = re.sub(r'\\,', '', text)
     
     # Remove all spaces
     text = re.sub(r'\s+', '', text)
@@ -188,13 +194,14 @@ def normalize_math_notation(text: str) -> str:
     # Remove x \in from left side like x \in [-2,7]
     text = re.sub(r'^[a-zA-Z]\s*\\in\s*', '', text)
     
-    # Remove patterns like "N=3" or "c_{\min}=2" and extract only the value
-    # This matches: variable_name (with optional subscript) = value
-    # Examples: N=3, c_{\min}=2, x_{max}=5
-    text = re.sub(r'^[a-zA-Z](?:_\{[^}]+\})?=', '', text)
-    
-    # Remove x = from left side like x = 1 (for simple cases)
-    text = re.sub(r'^[a-zA-Z]\s*=\s*', '', text)
+    # Extract right-hand side of equations like "C=\frac{m-1}{2}", "|T|_{\min}=2", "(a,b)=(0,0)"
+    # Split by = and take the last part (right-hand side)
+    if '=' in text:
+        parts = text.split('=')
+        right_side = parts[-1].strip()
+        # Only use right side if it's not empty and not too short (to avoid false positives)
+        if right_side and len(right_side) >= 1:
+            text = right_side
     
     # Convert vertical vectors to horizontal vectors for \begin{pmatrix} ... \end{pmatrix}
     # Extract elements separated by newlines or \\ and convert to comma-separated
