@@ -42,8 +42,8 @@ def parse_args():
                       default='/workspace/AIME_2024/aime_2024_problems.parquet',
                       help='Path to test file (default: /workspace/AIME_2024/aime_2024_problems.parquet)')
     parser.add_argument('--dataset_type', type=str, default='aime2024',
-                        choices=['gsm8k', 'aime2024', 'aime2024short', 'aime2025', 'math', 'math500', 'mmlu_pro', 'gpqa_diamond', 'auto'],
-                        help='Dataset type (default: aime2024). Choices: gsm8k, aime2024, aime2024short, aime2025, math, math500, mmlu_pro, gpqa_diamond, auto')
+                        choices=['gsm8k', 'aime2024', 'aime2024short', 'aime2025', 'math', 'math500', 'mmlu_pro', 'gpqa_diamond', 'answerbench', 'auto'],
+                        help='Dataset type (default: aime2024). Choices: gsm8k, aime2024, aime2024short, aime2025, math, math500, mmlu_pro, gpqa_diamond, answerbench, auto')
     parser.add_argument('--output_dir', type=str, default='output_batch',
                       help='Output directory path (default: output_batch)')
     parser.add_argument('--output_base', type=str, default='bo1_new',
@@ -250,6 +250,9 @@ def main():
     
     if args.dataset_type == 'gpqa_diamond' and args.test_file == '/workspace/AIME_2024/aime_2024_problems.parquet':
         args.test_file = '/workspace/GPQA-Diamond/test/gpqa_diamond.parquet'
+    
+    if args.dataset_type == 'answerbench' and args.test_file == '/workspace/AIME_2024/aime_2024_problems.parquet':
+        args.test_file = '/workspace/superhuman/imobench/answerbench_v2.csv'
     
     # Dynamically change output_base and log_base according to -n option
     # Change only when user is using default values

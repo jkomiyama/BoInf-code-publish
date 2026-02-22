@@ -136,11 +136,24 @@ def normalize_math_notation(text: str) -> str:
     
     import re
     
+    # Replace \cdot with space before removing all spaces
+    text = re.sub(r'\\cdot', ' ', text)
+    
     # Remove all spaces
     text = re.sub(r'\s+', '', text)
     
     # Remove \left, \right
     text = re.sub(r'\\left|\\right', '', text)
+    
+    # Remove \Bigl, \Bigr, \bigl, \bigr and other size commands
+    text = re.sub(r'\\[Bb]ig[lrm]?', '', text)
+    text = re.sub(r'\\[Bb]igg[lrm]?', '', text)
+    
+    # Replace \equiv with =
+    text = re.sub(r'\\equiv', '=', text)
+    
+    # Replace \lfrac with \frac
+    text = re.sub(r'\\lfrac', r'\\frac', text)
     
     # Replace \tfrac and \dfrac with \frac
     text = re.sub(r'\\[td]frac', r'\\frac', text)
@@ -175,7 +188,12 @@ def normalize_math_notation(text: str) -> str:
     # Remove x \in from left side like x \in [-2,7]
     text = re.sub(r'^[a-zA-Z]\s*\\in\s*', '', text)
     
-    # Remove x = from left side like x = 1
+    # Remove patterns like "N=3" or "c_{\min}=2" and extract only the value
+    # This matches: variable_name (with optional subscript) = value
+    # Examples: N=3, c_{\min}=2, x_{max}=5
+    text = re.sub(r'^[a-zA-Z](?:_\{[^}]+\})?=', '', text)
+    
+    # Remove x = from left side like x = 1 (for simple cases)
     text = re.sub(r'^[a-zA-Z]\s*=\s*', '', text)
     
     # Convert vertical vectors to horizontal vectors for \begin{pmatrix} ... \end{pmatrix}
@@ -534,6 +552,8 @@ def load_answers_data(dataset: str, parquet_path: Optional[str] = None) -> Dict[
             parquet_path = "/workspace/MMLU-Pro/data/validation-00000-of-00001.parquet"
         elif dataset.lower() == 'gpqa_diamond':
             parquet_path = "/workspace/GPQA-Diamond/test/gpqa_diamond.parquet"
+        elif dataset.lower() == 'answerbench':
+            parquet_path = "/workspace/superhuman/imobench/answerbench_v2.csv"
         else:
             print(f"Warning: Default path for {dataset} is not set. Please specify with --parquet-path option.")
             return {}
@@ -555,6 +575,29 @@ def load_answers_data(dataset: str, parquet_path: Optional[str] = None) -> Dict[
                 # Try different possible column names for the answer
                 answer_value = None
                 for col_name in ['Answer', 'answer', 'correct_answer', 'gold_answer']:
+                    if col_name in row and pd.notna(row[col_name]):
+                        answer_value = str(row[col_name])
+                        break
+                
+                if answer_value is not None:
+                    answers[problem_num] = answer_value
+                else:
+                    print(f"Warning: No answer found for problem {problem_num}, available columns: {list(df.columns)}")
+                
+        elif parquet_path.endswith('.csv'):
+            if not HAS_PANDAS:
+                print("Warning: pandas is not available. Cannot load CSV file; please install pandas.")
+                return {}
+            # For CSV files
+            df = pd.read_csv(parquet_path)
+            
+            # Problem ID is simply the row number (0-indexed)
+            for index, row in df.iterrows():
+                problem_num = index  # DataFrame index (0-indexed)
+                # Try different possible column names for the answer
+                answer_value = None
+                # For answerbench, use "Short Answer" column
+                for col_name in ['Short Answer', 'Answer', 'answer', 'correct_answer', 'gold_answer']:
                     if col_name in row and pd.notna(row[col_name]):
                         answer_value = str(row[col_name])
                         break

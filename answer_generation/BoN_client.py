@@ -136,6 +136,7 @@ def get_max_tokens_for_dataset(dataset_type, custom_max_tokens=None):
         'aime2025': 100000,    # AIME 2025: high difficulty, detailed solutions needed
         'mmlu_pro': 100000,     # MMLU-Pro: multiple choice, moderate explanations
         'gpqa_diamond': 50000,  # GPQA-Diamond: advanced science domain choice questions
+        'answerbench': 100000,  # AnswerBench: IMO-level math problems
         'auto': 10000,        # Default for auto-detection
     }
     
@@ -179,8 +180,8 @@ def parse_args():
                       help='Output directory path (default: ./iter_outputs)')
     parser.add_argument('--test_file', type=str, default='templategsm_random.jsonl',
                       help='Path to test dataset file (default: templategsm_random.jsonl). For AIME2024, use /workspace/AIME_2024/aime_2024_problems.parquet; For AIME2025, use /workspace/AIME2025/aime2025-full.jsonl; For MMLU-Pro, use /workspace/MMLU-Pro/data/validation-00000-of-00001.parquet; For GPQA-Diamond, use /workspace/GPQA-Diamond/test/gpqa_diamond.parquet')
-    parser.add_argument('--dataset_type', type=str, choices=['gsm8k', 'aime2024', 'aime2024short', 'aime2025', 'math', 'math500', 'mmlu_pro', 'gpqa_diamond', 'auto'], default='auto',
-                      help='Dataset type: gsm8k, aime2024, aime2024short, aime2025, math, math500, mmlu_pro, gpqa_diamond, or auto-detect (default: auto)')
+    parser.add_argument('--dataset_type', type=str, choices=['gsm8k', 'aime2024', 'aime2024short', 'aime2025', 'math', 'math500', 'mmlu_pro', 'gpqa_diamond', 'answerbench', 'auto'], default='auto',
+                      help='Dataset type: gsm8k, aime2024, aime2024short, aime2025, math, math500, mmlu_pro, gpqa_diamond, answerbench, or auto-detect (default: auto)')
     parser.add_argument('--instruction_key', type=str, default=None,
                       help='Key name for instruction/problem in dataset (auto-detected if not specified)')
     parser.add_argument('--output_key', type=str, default=None,
@@ -1094,6 +1095,12 @@ def detect_dataset_type(file_path, dataset_type='auto'):
                 'output_key': 'answer',
                 'solution_key': 'question'  # GPQA-Diamond has no solution, so use question as solution
             }
+        elif dataset_type == 'answerbench':
+            return {
+                'instruction_key': 'Problem',
+                'output_key': 'Short Answer',
+                'solution_key': 'Problem'  # answerbench has no solution, so use Problem as solution
+            }
     
     # Auto-detection by file extension
     if file_path.endswith('.parquet'):
@@ -1174,7 +1181,7 @@ def detect_dataset_type(file_path, dataset_type='auto'):
             }
 
 def load_data(file_path, instruction_key, output_key, solution_key):
-    """Load JSONL or Parquet file and return in unified format"""
+    """Load JSONL, Parquet, or CSV file and return in unified format"""
     list_data_dict = []
     
     # Determine if MMLU-Pro dataset
@@ -1185,9 +1192,13 @@ def load_data(file_path, instruction_key, output_key, solution_key):
         df = pd.read_parquet(file_path)  # type: ignore
         columns = df.columns.tolist()
         is_mmlu_pro = 'question' in columns and 'options' in columns and 'answer' in columns and 'cot_content' in columns
+    elif file_path.endswith('.csv'):
+        if not HAS_PANDAS:
+            raise ImportError("pandas is required for reading CSV files. Please run pip install pandas.")
+        df = pd.read_csv(file_path)  # type: ignore
     
-    if file_path.endswith('.parquet'):
-        # For Parquet files
+    if file_path.endswith('.parquet') or file_path.endswith('.csv'):
+        # For Parquet and CSV files
         for _, row in df.iterrows():
             if is_mmlu_pro:
                 # For MMLU-Pro: combine question and options to generate instruction

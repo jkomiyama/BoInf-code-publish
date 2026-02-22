@@ -1335,8 +1335,8 @@ def is_correct(answer: str, gold: str, dataset_type: str = None) -> bool:
         extracted_cleaned = remove_degree_symbols(extracted_answer)
         gold_cleaned = remove_degree_symbols(str(gold))
         
-        # For math or math500 datasets: use LLM numerical comparison
-        if dataset_type in ["math", "math500"]:
+        # For math, math500, or answerbench datasets: use LLM numerical comparison
+        if dataset_type in ["math", "math500", "answerbench"]:
             # Compare extracted answer from boxed with gold using LLM
             #print(f"extracted_answer: {extracted_answer}")
             #print(f"gold: {gold}")
