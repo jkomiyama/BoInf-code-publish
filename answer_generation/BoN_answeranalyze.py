@@ -13,13 +13,24 @@ import glob
 import csv
 import json
 import argparse
+import sys
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime
+from pathlib import Path
 try:
     import pandas as pd
     HAS_PANDAS = True
 except ImportError:
     HAS_PANDAS = False
+
+# Import normalize_answer_format from ensemble_utils
+sys.path.insert(0, str(Path(__file__).parent.parent / "boinf"))
+try:
+    from ensemble_utils import normalize_answer_format
+    HAS_ENSEMBLE_UTILS = True
+except ImportError:
+    HAS_ENSEMBLE_UTILS = False
+    print("Warning: Could not import ensemble_utils. Using local normalization only.")
 
 # from BoN_utils import is_correct, extract_boxed_answer
 
@@ -139,11 +150,24 @@ def normalize_math_notation(text: str) -> str:
     # Remove $ symbols (from gold answers like $2^{u-2}$)
     text = text.replace('$', '')
     
+    # Remove display-style LaTeX commands like \displaystyle, \textstyle, \scriptstyle, \scriptscriptstyle
+    text = re.sub(r'\\(?:displaystyle|textstyle|scriptstyle|scriptscriptstyle)\s*', '', text)
+    
+    # Normalize connectors like "\text{ or }", "\text{ and }" to comma before removing spaces
+    # This handles patterns like "8\text{ or }9" -> "8,9"
+    text = re.sub(r'\\text\s*\{\s*(?:or|and)\s*\}', ',', text)
+    text = re.sub(r'\s+(?:or|and)\s+', ',', text, flags=re.IGNORECASE)
+    
+    # Remove \quad and \qquad spacing commands
+    text = re.sub(r'\\q?quad', '', text)
+    
     # Replace \cdot with space before removing all spaces
     text = re.sub(r'\\cdot', ' ', text)
     
     # Remove \, (small space in LaTeX)
     text = re.sub(r'\\,', '', text)
+    # Explicitly remove digit-group separators like 4\,151\,879\,777 -> 4151879777
+    text = re.sub(r'(?<=\d)\\,(?=\d)', '', text)
     
     # Remove all spaces
     text = re.sub(r'\s+', '', text)
@@ -191,12 +215,19 @@ def normalize_math_notation(text: str) -> str:
     # Replace ,\! with , (keep comma) - but process comma separators between numbers later
     text = re.sub(r',\\!', ',', text)
     
+    # Remove trailing \; like 2x-2\;
+    text = re.sub(r'\\;$', '', text)
+    
+    # Remove \; in general (not just trailing)
+    text = re.sub(r'\\;', '', text)
+    
     # Remove x \in from left side like x \in [-2,7]
     text = re.sub(r'^[a-zA-Z]\s*\\in\s*', '', text)
     
     # Extract right-hand side of equations like "C=\frac{m-1}{2}", "|T|_{\min}=2", "(a,b)=(0,0)"
-    # Split by = and take the last part (right-hand side)
-    if '=' in text:
+    # But skip if there are multiple solutions (contains comma after removing thousands separators)
+    # This preserves answers like "N=3,N=7" or "8,9"
+    if '=' in text and ',' not in text:
         parts = text.split('=')
         right_side = parts[-1].strip()
         # Only use right side if it's not empty and not too short (to avoid false positives)
@@ -236,36 +267,22 @@ def normalize_math_notation(text: str) -> str:
     # Remove [Xpt] patterns like [4pt]
     text = re.sub(r'\[\d+pt\]', '', text)
     
-    # Remove commas between numbers (thousands separator) - except inside parentheses
-    # First protect commas inside parentheses, then process
-    def remove_commas_outside_parentheses(text):
-        # Protect commas inside parentheses and remove commas between numbers outside parentheses
-        result = ""
-        paren_depth = 0
-        i = 0
-        while i < len(text):
-            if text[i] == '(':
-                paren_depth += 1
-                result += text[i]
-            elif text[i] == ')':
-                paren_depth -= 1
-                result += text[i]
-            elif text[i] == ',' and paren_depth == 0:
-                # Comma outside parentheses, remove if surrounded by digits
-                if (i > 0 and i < len(text) - 1 and 
-                    text[i-1].isdigit() and text[i+1].isdigit()):
-                    pass  # Remove comma (don't add to result)
-                else:
-                    result += text[i]
-            else:
-                result += text[i]
-            i += 1
+    # Remove commas in thousands separator patterns only (e.g., 1,000 -> 1000)
+    # But preserve commas in lists (e.g., 8,9 should stay as 8,9)
+    # Pattern: numbers with exactly 3 digits after each comma (thousands separator)
+    # This matches patterns like 1,000 or 1,000,000 but not 8,9 or N=3,N=7
+    def remove_thousands_separators(text):
+        # Replace thousands separators: match \d{1,3}(,\d{3})+ pattern
+        # This ensures we only remove commas that are part of thousands separators
+        result = re.sub(r'(?<=\d),(?=\d{3}(?:\D|$))', '', text)
         return result
     
-    text = remove_commas_outside_parentheses(text)
+    text = remove_thousands_separators(text)
     
     # Replace patterns like \frac9{19} to \frac{9}{19}
     text = re.sub(r'\\frac(\d+)\{', r'\\frac{\1}{', text)
+    # Normalize malformed \frac with optional spaces (e.g. \frac{1} {2}) to \frac{1}{2}
+    text = re.sub(r'\\frac\{([^{}]+)\}\s*\{([^{}]+)\}', r'\\frac{\1}{\2}', text)
     
     
     # Remove degree symbols (^\circ and °)
@@ -276,6 +293,17 @@ def normalize_math_notation(text: str) -> str:
     
     # Remove patterns with \, at beginning and end like \,1+274i\,
     text = re.sub(r'^\\,(.*)\\,$', r'\1', text)
+    
+    # Remove braces from simple exponents like 2^{n} -> 2^n, but preserve \frac and other commands
+    # Only remove braces if the content inside is simple (alphanumeric, +, -, without nested braces)
+    def remove_simple_exponent_braces(match):
+        content = match.group(1)
+        # If content has no nested braces and no backslashes (LaTeX commands), remove braces
+        if '{' not in content and '}' not in content and '\\' not in content:
+            return '^' + content
+        return match.group(0)
+    
+    text = re.sub(r'\^{([^{}]+)}', remove_simple_exponent_braces, text)
     
     return text
 
@@ -412,6 +440,9 @@ def extract_answer_smart(text: str, dataset_type: str = None) -> str:
                     return t.upper()
                 return t
             result = normalize_letter_choice_simple_local(result)
+        elif dataset_type.lower() == 'answerbench':
+            # For answerbench, always use local normalization for deterministic behavior
+            result = normalize_math_notation(result)
         else:
             result = normalize_math_notation(result)
     
@@ -454,6 +485,11 @@ def is_correct(answer: str, gold: str, dataset_type: str = None) -> bool:
         answer_normalized = str(answer).strip()
         gold_normalized = normalize_letter_choice_simple(gold_str)
         extracted_normalized = normalize_letter_choice_simple(extracted_str)
+    elif dataset_type and dataset_type.lower() == 'answerbench':
+        # For answerbench, always use local normalization for deterministic behavior
+        answer_normalized = normalize_math_notation(str(answer).strip())
+        gold_normalized = normalize_math_notation(gold_str)
+        extracted_normalized = normalize_math_notation(extracted_str)
     else:
         # For other datasets, apply normalization
         answer_normalized = normalize_math_notation(str(answer).strip())
@@ -1191,17 +1227,54 @@ def save_results_as_jsonl(summary_data, dataset: str, output_file: str = None):
         for row in filtered_data:
             # Create JSONL entry with required fields
             gold_answer_raw = row.get('gold_answer')
-            if dataset and dataset.lower() != 'gpqa_diamond' and gold_answer_raw is not None:
+            # Always normalize gold_answer for answerbench dataset
+            if dataset and dataset.lower() == 'answerbench' and gold_answer_raw is not None:
+                gold_answer_out = normalize_math_notation(str(gold_answer_raw))
+            elif dataset and dataset.lower() == 'gpqa_diamond':
+                # For GPQA-Diamond, do not normalize
+                gold_answer_out = gold_answer_raw
+            elif gold_answer_raw is not None:
+                # For other datasets, use local normalization
                 gold_answer_out = normalize_math_notation(str(gold_answer_raw))
             else:
                 gold_answer_out = gold_answer_raw
+            
+            # Normalize answer_counts keys for answerbench
+            answer_counts_dict = row.get('dict_answers', {})
+            if dataset and dataset.lower() == 'answerbench':
+                # Normalize all answer keys with local normalization
+                normalized_answer_counts = {}
+                for answer_key, count in answer_counts_dict.items():
+                    normalized_key = normalize_math_notation(str(answer_key))
+                    if normalized_key in normalized_answer_counts:
+                        normalized_answer_counts[normalized_key] += count
+                    else:
+                        normalized_answer_counts[normalized_key] = count
+                answer_counts_dict = normalized_answer_counts
+            
+            # Normalize majority_answer for answerbench
+            majority_answer = row.get('majority_answer')
+            if dataset and dataset.lower() == 'answerbench' and majority_answer:
+                majority_answer = normalize_math_notation(str(majority_answer))
+            
+            # Normalize all_answers for answerbench
+            all_answers = row.get('all_answers', [])
+            if dataset and dataset.lower() == 'answerbench':
+                normalized_all_answers = []
+                for ans_pair in all_answers:
+                    if ans_pair and len(ans_pair) >= 1:
+                        normalized_ans = normalize_math_notation(str(ans_pair[0]))
+                        token_count = ans_pair[1] if len(ans_pair) >= 2 else 0
+                        normalized_all_answers.append([normalized_ans, token_count])
+                all_answers = normalized_all_answers
+            
             jsonl_entry = {
                 'problem_num': row.get('problem_num'),
                 'total_answers': row.get('total_answers'),
-                'answer_counts': row.get('dict_answers', {}),
+                'answer_counts': answer_counts_dict,
                 'gold_answer': gold_answer_out,
-                'majority_answer': row.get('majority_answer'),
-                'all_answers': row.get('all_answers', [])
+                'majority_answer': majority_answer,
+                'all_answers': all_answers
             }
             
             # Write as JSON line
