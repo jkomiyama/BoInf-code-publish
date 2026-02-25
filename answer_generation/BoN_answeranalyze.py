@@ -287,17 +287,62 @@ def normalize_letter_choice_simple(choice_text: str) -> str:
         return t.upper()
     return t
 
+def extract_medrect_answer(text: str) -> str:
+    """
+    Extract answer for medrect dataset
+    Format:
+    - "CORRECT" -> error_sentence_id = 0
+    - "文番号: ..." -> error_sentence_id = 文番号
+    
+    Args:
+        text: Text to extract from
+    
+    Returns:
+        "0" if no error, or sentence_id as string if error found
+    """
+    if not text:
+        return None
+    
+    # Remove <think> tags if present
+    text_clean = text.strip()
+    if '</think>' in text_clean:
+        # Extract content after </think>
+        text_clean = text_clean.split('</think>', 1)[1].strip()
+    
+    # Check if answer is CORRECT
+    if re.search(r'\bCORRECT\b', text_clean, re.IGNORECASE):
+        return "0"
+    
+    # Extract sentence number from format "文番号: ..."
+    # Also handle English format "Sentence N:" or just "N:"
+    patterns = [
+        r'^(\d+)\s*:',  # "6: ..." at the beginning
+        r'\b(?:文|Sentence)\s*(\d+)\s*:',  # "文6:" or "Sentence 6:"
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, text_clean, re.MULTILINE)
+        if match:
+            return match.group(1)
+    
+    # If no clear pattern found, return None
+    return None
+
 def extract_answer_smart(text: str, dataset_type: str = None) -> str:
     """
     Smart answer extraction that chooses the appropriate method based on model and dataset
     
     Args:
         text: Text to extract from
-        dataset_type: Type of dataset (aime2024, aime2025, mmlu_pro, gpqa_diamond, etc.)
+        dataset_type: Type of dataset (aime2024, aime2025, mmlu_pro, gpqa_diamond, medrect, etc.)
     
     Returns:
         Extracted answer or None if not found
     """
+    # For medrect dataset, use special extraction
+    if dataset_type and dataset_type.lower() == 'medrect':
+        return extract_medrect_answer(text)
+    
     # Helper: normalize single character choices regardless of parentheses and return
     def normalize_letter_choice_simple(choice_text: str) -> str:
         if not choice_text:
@@ -423,6 +468,11 @@ def is_correct(answer: str, gold: str, dataset_type: str = None) -> bool:
     gold_str = str(gold).strip()
     extracted_str = str(extracted_answer).strip()
     
+    # For medrect dataset, use simple string comparison
+    if dataset_type and dataset_type.lower() == 'medrect':
+        # Direct string comparison for sentence IDs
+        return extracted_str == gold_str
+    
     # Apply normalization for comparison
     if dataset_type and dataset_type.lower() == 'gpqa_diamond':
         # For GPQA-Diamond, don't normalize mathematical notation, only normalize parentheses for single letter choices
@@ -534,6 +584,8 @@ def load_answers_data(dataset: str, parquet_path: Optional[str] = None) -> Dict[
             parquet_path = "/workspace/MMLU-Pro/data/validation-00000-of-00001.parquet"
         elif dataset.lower() == 'gpqa_diamond':
             parquet_path = "/workspace/GPQA-Diamond/test/gpqa_diamond.parquet"
+        elif dataset.lower() == 'medrect':
+            parquet_path = "/workspace/medrect/data/medrect/medrect-ja-step4-accepted.json"
         else:
             print(f"Warning: Default path for {dataset} is not set. Please specify with --parquet-path option.")
             return {}
@@ -564,21 +616,64 @@ def load_answers_data(dataset: str, parquet_path: Optional[str] = None) -> Dict[
                 else:
                     print(f"Warning: No answer found for problem {problem_num}, available columns: {list(df.columns)}")
                 
-        elif parquet_path.endswith('.jsonl'):
-            # For jsonl files
+        elif parquet_path.endswith('.jsonl') or parquet_path.endswith('.json'):
+            # For jsonl and json files
             with open(parquet_path, 'r', encoding='utf-8') as f:
-                for line_num, line in enumerate(f):
-                    if line.strip():  # Skip empty lines
-                        try:
-                            data = json.loads(line.strip())
-                            # Get correct answer according to JSONL file structure
-                            # Assume common structure: {"answer": "value"} or {"Answer": "value"}
+                content = f.read().strip()
+                
+                # Check if it's a JSON array
+                if content.startswith('['):
+                    # JSON array format
+                    data_list = json.loads(content)
+                    for line_num, data in enumerate(data_list):
+                        # For medrect dataset: get answer from error_flag and error_sentence_id
+                        if dataset.lower() == 'medrect':
+                            error_flag = data.get('error_flag', 0)
+                            if error_flag == 0:
+                                # No error
+                                answers[line_num] = "0"
+                            else:
+                                # Has error, use error_sentence_id
+                                error_sentence_id = data.get('error_sentence_id')
+                                if error_sentence_id is not None:
+                                    answers[line_num] = str(error_sentence_id)
+                                else:
+                                    print(f"Warning: error_flag=1 but error_sentence_id not found for problem {line_num}")
+                                    answers[line_num] = "0"
+                        else:
+                            # Standard format
                             answer = data.get('answer') or data.get('Answer') or data.get('gold_answer')
                             if answer is not None:
                                 answers[line_num] = str(answer)
-                        except json.JSONDecodeError as e:
-                            print(f"Warning: Failed to parse JSON on line {line_num + 1}: {e}")
-                            continue
+                else:
+                    # JSONL format (one JSON per line)
+                    f.seek(0)  # Reset file pointer
+                    for line_num, line in enumerate(f):
+                        if line.strip():  # Skip empty lines
+                            try:
+                                data = json.loads(line.strip())
+                                # For medrect dataset: get answer from error_flag and error_sentence_id
+                                if dataset.lower() == 'medrect':
+                                    error_flag = data.get('error_flag', 0)
+                                    if error_flag == 0:
+                                        # No error
+                                        answers[line_num] = "0"
+                                    else:
+                                        # Has error, use error_sentence_id
+                                        error_sentence_id = data.get('error_sentence_id')
+                                        if error_sentence_id is not None:
+                                            answers[line_num] = str(error_sentence_id)
+                                        else:
+                                            print(f"Warning: error_flag=1 but error_sentence_id not found for problem {line_num}")
+                                            answers[line_num] = "0"
+                                else:
+                                    # Standard format
+                                    answer = data.get('answer') or data.get('Answer') or data.get('gold_answer')
+                                    if answer is not None:
+                                        answers[line_num] = str(answer)
+                            except json.JSONDecodeError as e:
+                                print(f"Warning: Failed to parse JSON on line {line_num + 1}: {e}")
+                                continue
         else:
             print(f"Warning: Unsupported file format: {parquet_path}")
             return {}
@@ -1167,8 +1262,8 @@ def main():
                        default='saved_answers',
                        help='Directory containing answer files (default: saved_answers)')
     parser.add_argument('--dataset', '-ds',
-                       default='aime2024',
-                       help='Dataset name (default: aime2024)')
+                       default='medrect',
+                       help='Dataset name (default: medrect)')
     parser.add_argument('--parquet-path', '-p',
                        help='Path to correct answer data parquet file (default: auto-set based on dataset)')
     parser.add_argument('--show-dict-answers', 

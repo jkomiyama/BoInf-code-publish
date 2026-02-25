@@ -137,7 +137,7 @@ def get_max_tokens_for_dataset(dataset_type, custom_max_tokens=None):
         'mmlu_pro': 100000,     # MMLU-Pro: multiple choice, moderate explanations
         'gpqa_diamond': 50000,  # GPQA-Diamond: advanced science domain choice questions
         'answerbench': 100000,  # AnswerBench: IMO-level math problems
-        'medrect': 50000,      # MedRect: medical error detection tasks
+        'medrect': 100000,      # MedRect: medical error detection tasks
         'auto': 10000,        # Default for auto-detection
     }
     
