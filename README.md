@@ -1,6 +1,17 @@
-# Repository of Best-of-Infinity
+# For medrect dataset generation
 
-**News: Our paper is accepted at ICLR2026!**
+```bash
+conda activate /workspace/myenv
+cd answer_generation
+python BoN_batch.py --start 0 --end 49 --max_workers 50 --dataset_type medrect --evaluation_method omni --use_save --output_dir output_batch_datagen -n 2 --file_start 0
+python BoN_answeranalyze.py --dataset medrect
+python answer_generation/filter_gold_zero_jsonl.py
+cd boinf
+ python test_main.py ../answer_generation/analysis_medrect_sentenceextraction_gpt-oss-20b.jsonl --n-trials 100 --analyze-bayes
+```
+
+
+# Repository of Best-of-Infinity
 
 This repository contains code for the paper "Best-of-Infinity - Asymptotic Performance of Test-Time Compute". 
 
