@@ -1,7 +1,6 @@
 # For medrect dataset generation
 
 ```bash
-conda activate /workspace/myenv
 cd answer_generation
 python BoN_batch.py --start 0 --end 49 --max_workers 50 --dataset_type medrect --evaluation_method omni --use_save --output_dir output_batch_datagen -n 2 --file_start 0
 python BoN_answeranalyze.py --dataset medrect
