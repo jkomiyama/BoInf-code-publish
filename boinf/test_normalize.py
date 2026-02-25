@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""Test normalization for answerbench"""
+"""Test normalization for answerbench."""
 
-import sys
-sys.path.insert(0, '/workspace/BoInf-code-publish_iclr2026/boinf')
-
-from ensemble_utils import normalize_latex_math, normalize_answer_format
+from ensemble_utils import normalize_answer_format
 
 # Test cases from the user's examples
 test_cases = [
