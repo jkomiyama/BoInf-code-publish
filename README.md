@@ -1,3 +1,14 @@
+# For IMOBench (answerbench) dataset generation
+
+```bash
+cd answer_generation
+python BoN_batch.py --start 0 --end 49 --max_workers 50 --dataset_type answerbench --evaluation_method omni --use_save --output_dir output_batch_datagen -n 2 --file_start 0
+python BoN_answeranalyze.py --dataset answerbench
+python create_answerbench_subset.py
+cd ../boinf
+python test_main.py ../answer_generation/analysis_answerbench_subset_gpt-oss-20b.jsonl --n-trials 100 --analyze-bayes
+```
+
 # Repository of Best-of-Infinity
 
 **News: Our paper is accepted at ICLR2026!**
